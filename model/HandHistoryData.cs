@@ -39,7 +39,7 @@ namespace HandHistoryParser.model
 
         public override string? ToString()
         {
-            return $"HandHistory#{HandHistoryNumber}, Players:  {string.Join(", ", Players)}";
+            return $"HandHistory#{HandHistoryNumber}\r\nPlayers: [\n  {string.Join("\n  ", Players)}\n]";
         }
     }
 }

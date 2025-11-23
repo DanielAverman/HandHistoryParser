@@ -1,4 +1,6 @@
 ﻿
+using System.Globalization;
+
 namespace HandHistoryParser.model
 {
     internal class Player(int seatNumber, string nickname, decimal stack, List<Card> cards)
@@ -25,7 +27,8 @@ namespace HandHistoryParser.model
 
         public override string? ToString()
         {
-            return String.Format("{0} on the seat #{1} with stack=${2}", Nickname, SeatNumber, Stack);
+            return $"{Nickname}: seat#{SeatNumber} stack=$" +
+                $"{Stack.ToString("#,0.00", CultureInfo.InvariantCulture)} [{string.Join(" ", Cards)}]";
         }
     }
 }
