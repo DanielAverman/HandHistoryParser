@@ -1,10 +1,12 @@
 ﻿using HandHistoryParser.exception;
 using HandHistoryParser.model;
 using HandHistoryParser.utils;
+using Microsoft.Extensions.Logging;
+using System.IO.Compression;
 
 namespace HandHistoryParser.parser
 {
-    internal class Parser
+    internal class Parser(ILogger<Parser> logger)
     {
         private const string HOLE_CARDS_SECTION_HEADER = "HOLE CARDS";
         private const string FLOP_SECTION_HEADER = "FLOP";
@@ -21,6 +23,55 @@ namespace HandHistoryParser.parser
         private const int PLAYER_INFO_NICKNAME_PART_INDEX = 2;
         private const int PLAYER_INFO_STACK_PART_INDEX = 3;
         private const int DEALT_TO_HERO_NICKNAME_PART_INDEX = 2;
+        private const string HAND_HOSTORIES_DELIMETER = "\r\n\r\n\r\n\r\n";
+
+        private readonly ILogger<Parser> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        public void ParseZipAndWriteOutput(string zipFilePath)
+        {
+            string archiveName = Path.GetFileNameWithoutExtension(zipFilePath);
+            string dateString = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string outputDirectory = Path.Combine("resources", "parsed");
+            string outputFileName = $"{dateString}_{archiveName}.txt";
+            string outputFilePath = Path.Combine(outputDirectory, outputFileName);
+
+            Directory.CreateDirectory(outputDirectory);
+
+            using StreamWriter writer = new(outputFilePath);
+            using ZipArchive archive = ZipFile.OpenRead(zipFilePath);
+            List<HandHistoryData> parsedData = ParseZipArchive(archive);
+            writer.WriteLine(string.Join("\r\n", parsedData));
+        }
+
+        private List<HandHistoryData> ParseZipArchive(ZipArchive archive)
+        {
+            List<HandHistoryData> parsedData = [];
+            foreach (ZipArchiveEntry entry in archive.Entries)
+            {
+                if (entry.FullName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        using StreamReader reader = new(entry.Open());
+                        string content = reader.ReadToEnd();
+                        parsedData.AddRange(ParseFileContent(content, HAND_HOSTORIES_DELIMETER));
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_logger.IsEnabled(LogLevel.Error))
+                        {
+                            _logger.LogError("Error processing {entry.FullName}: {ex.Message}", entry.FullName, ex.Message);
+                        }
+                    }
+                }
+            }
+            return parsedData;
+        }
+
+        private static List<HandHistoryData> ParseFileContent(string content, string delimeter)
+        {
+            return [.. content.Split(delimeter).Select(e => Parser.Parse(e))];
+        }
 
         internal static HandHistoryData Parse(string handHistory)
         {
@@ -57,17 +108,17 @@ namespace HandHistoryParser.parser
                 throw new ArgumentException("The number of rows with '" + DEALT_TO_TEXT + "' is " + dealtToRows.Count, nameof(section));
             }
 
-            Player hero = ParseCardsDealtToHero(data, dealtToRows.First());
+            Player hero = ParseCardsDealtToHero(dealtToRows.First());
             return data.WithNewPlayers([.. data.Players.Select(p => p.Equals(hero) ? p.updateCards(hero.Cards) : p)]);
         }
 
-        private static Player ParseCardsDealtToHero(HandHistoryData data, string dealtToRow)
+        private static Player ParseCardsDealtToHero(string dealtToRow)
         {
             string[] dealtToParts = dealtToRow.Split(" ");
             string heroNickname = dealtToParts[DEALT_TO_HERO_NICKNAME_PART_INDEX];
 
-            int startIndex = dealtToRow.IndexOf("[") + 1;
-            int endIndex = dealtToRow.IndexOf("]");
+            int startIndex = dealtToRow.IndexOf('[') + 1;
+            int endIndex = dealtToRow.IndexOf(']');
 
             if (startIndex == - 1 || endIndex == -1 )
             {
@@ -105,10 +156,10 @@ namespace HandHistoryParser.parser
         private static Player ParsePlayerInfo(string playerInfoRow)
         {
             string[] playerInfoParts = playerInfoRow.Trim().Split(" ");
-            if (playerInfoParts.Length != PLAYER_INFO_PARTS_LENGTH)
-            {
-                throw new ArgumentException("Trimmed value of playerInfoRow includes not " + PLAYER_INFO_PARTS_LENGTH + " parts.");
-            }
+            //if (playerInfoParts.Length != PLAYER_INFO_PARTS_LENGTH)
+            //{
+            //    throw new ArgumentException("Trimmed value of playerInfoRow includes not " + PLAYER_INFO_PARTS_LENGTH + " parts.");
+            //}
 
             int seatNumber = ParsePlayerSeatNumber(playerInfoParts);
             string nickname = ParsePlayerNickName(playerInfoParts);
