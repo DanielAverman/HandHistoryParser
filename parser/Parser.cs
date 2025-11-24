@@ -3,11 +3,13 @@ using HandHistoryParser.model;
 using HandHistoryParser.utils;
 using Microsoft.Extensions.Logging;
 using System.IO.Compression;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace HandHistoryParser.parser
 {
-    internal class Parser(ILogger<Parser> logger)
+    /// <summary>
+    /// Parser for PokerStars handhistory
+    /// </summary>
+    internal class Parser(ILogger<Parser>? logger = null)
     {
         private const string HOLE_CARDS_SECTION_HEADER = "*** HOLE CARDS ***";
         private const string FLOP_SECTION_HEADER = "*** FLOP ***";
@@ -19,31 +21,35 @@ namespace HandHistoryParser.parser
         private const string SEAT_TEXT = "Seat";
         private const string DEALT_TO_TEXT = "Dealt to";
         private const string ROWS_DELIMETER = "\r\n";
-        private const int PLAYER_INFO_PARTS_LENGTH = 6;
-        private const int PLAYER_INFO_SEAT_NUMBER_PART_INDEX = 1;
-        private const int PLAYER_INFO_NICKNAME_PART_INDEX = 2;
-        private const int PLAYER_INFO_STACK_PART_INDEX = 3;
+        private const string HEADER_PREFIX = "***"; 
         private const int DEALT_TO_HERO_NICKNAME_PART_INDEX = 2;
         private const string HAND_HOSTORIES_DELIMETER = "\r\n\r\n\r\n\r\n";
 
-        private readonly ILogger<Parser> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        private readonly ILogger<Parser> _logger = logger ?? Config.CreateDefaultLogger();
 
+        /// <summary>
+        /// Parse all nested txt files in archive
+        /// </summary>
+        /// <param name="zipFilePath">Full path to archive file for parsing</param>
         public void ParseZipAndWriteOutput(string zipFilePath)
         {
             if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Start prasing: {zipFilePath}", zipFilePath);
+            try
+            {
+                string outputFilePath = Config.GetOutputFilePath(zipFilePath);
 
-            string archiveName = Path.GetFileNameWithoutExtension(zipFilePath);
-            string dateString = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string outputDirectory = Path.Combine("resources", "parsed");
-            string outputFileName = $"{dateString}_{archiveName}.txt";
-            string outputFilePath = Path.Combine(outputDirectory, outputFileName);
+                using StreamWriter writer = new(outputFilePath);
+                using ZipArchive archive = ZipFile.OpenRead(zipFilePath);
+                List<HandHistoryData> parsedData = ParseZipArchive(archive);
 
-            Directory.CreateDirectory(outputDirectory);
-
-            using StreamWriter writer = new(outputFilePath);
-            using ZipArchive archive = ZipFile.OpenRead(zipFilePath);
-            List<HandHistoryData> parsedData = ParseZipArchive(archive);
-            writer.WriteLine(string.Join("\r\n", parsedData.Where(e => !e.Equals(new()))));
+                writer.WriteLine(string.Join("\r\n", parsedData.Where(e => !e.Equals(new()))));
+            } catch (Exception e)
+            {
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+                    _logger.LogError("Error processing {zipFilePath}: {e.Message}", zipFilePath, e.Message);
+                }
+            }
         }
 
         private List<HandHistoryData> ParseZipArchive(ZipArchive archive)
@@ -77,7 +83,7 @@ namespace HandHistoryParser.parser
             return [.. content.Split(delimeter).Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => Parse(e))];
         }
 
-        internal HandHistoryData Parse(string handHistory)
+        public HandHistoryData Parse(string handHistory)
         {
             return ParseSections(handHistory);
         }
@@ -87,17 +93,17 @@ namespace HandHistoryParser.parser
             if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("--Prasing sections...");
             HandHistoryData data = new();
 
-            var notParsedlines = handHistory.Split("\r\n");
+            var notParsedlines = handHistory.Split(ROWS_DELIMETER);
 
-            data = ParseHeaderSection(data, string.Join("\r\n", notParsedlines.TakeWhile(e => !e.StartsWith("***"))));
-            notParsedlines = [.. notParsedlines.SkipWhile(row => !row.StartsWith("***"))];
+            data = ParseHeaderSection(data, string.Join(ROWS_DELIMETER, notParsedlines.TakeWhile(e => !e.StartsWith(HEADER_PREFIX))));
+            notParsedlines = [.. notParsedlines.SkipWhile(row => !row.StartsWith(HEADER_PREFIX))];
 
             while (notParsedlines.Length > 0)
             {
                 string header = notParsedlines[0];
                 notParsedlines = notParsedlines[1..];
-                string section = string.Join("\r\n", notParsedlines.TakeWhile(e => !e.StartsWith("***")));
-                notParsedlines = [.. notParsedlines.SkipWhile(row => !row.StartsWith("***"))];
+                string section = string.Join(ROWS_DELIMETER, notParsedlines.TakeWhile(e => !e.StartsWith(HEADER_PREFIX)));
+                notParsedlines = [.. notParsedlines.SkipWhile(row => !row.StartsWith(HEADER_PREFIX))];
                 data = ParseSection(data, header, section);
             }
             
@@ -108,7 +114,6 @@ namespace HandHistoryParser.parser
         {
             return sectionName.Trim() switch
             {
-                "HEADER" => ParseHeaderSection(data, section),
                 HOLE_CARDS_SECTION_HEADER => ParseHoleCardsSection(data, section),
                 _ => data,
             };
