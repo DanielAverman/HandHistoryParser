@@ -53,7 +53,7 @@ namespace HandHistoryParser.utils
         {
             if (!char.IsDigit(text[startIndex]))
             {
-                throw new ArgumentException("Could not convert as char at startIndex is not a digit['" + text[startIndex] + "'].");
+                throw new ArgumentException("Could not convert as char at startIndex is not a digit['" + text[startIndex] + "']." + text);
             }
 
             int endIndex = startIndex + 1;
@@ -66,7 +66,7 @@ namespace HandHistoryParser.utils
         {
             if (!char.IsDigit(text[startIndex]))
             {
-                throw new ArgumentException("Could not convert as char at startIndex is not a digit['" + text[startIndex] + "'].");
+                throw new ArgumentException("Could not convert as char at startIndex is not a digit['" + text[startIndex] + "']." + text);
             }
 
             int endIndex = startIndex + 1;
